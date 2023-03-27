@@ -1,6 +1,7 @@
 import * as THREE from "three"
+import { Scene } from "three";
 import { RendererConfig } from "../types/RendererConfig";
-import { RenderSizeModel} from "../types/RenderSizeModel";
+import { RenderSizeModel } from "../types/RenderSizeModel";
 
 export default class RenderManager {
 	renderer: any;
@@ -25,7 +26,11 @@ export default class RenderManager {
 		}
 	}
 
-	appendDom(){
+	appendDom() {
 		document.body.appendChild(this.renderer.domElement)
+	}
+
+	public render(tpf: any, scene: Scene, camera: any) {
+		this.renderer.render(scene,camera)
 	}
 }

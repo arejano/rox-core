@@ -69,6 +69,63 @@ export default class ECS {
 
 	private onEntityUpdate(entity: Entity, added: any, removed: any) {
 
+		if (!this.entitySystems[entity.id]) {
+			return;
+		}
+
+		const toNotify: System[] = this.entitySystems[entity.id].slice(0);
+
+		outside:
+		for (var idx = toNotify.length - 1; idx >= 0; idx--) {
+			let system = toNotify[idx];
+
+			// System is listening to updates on entity?
+			if (system.change) {
+
+				let systemComponentTypes = (system as any).componentTypes;
+
+				// Listen to all component type
+				if (systemComponentTypes.indexOf(-1) >= 0) {
+					continue;
+				}
+
+				if (added && systemComponentTypes.indexOf(added.type) >= 0) {
+					continue outside;
+				}
+
+				if (removed && systemComponentTypes.indexOf(removed.type) >= 0) {
+					continue outside;
+				}
+			}
+
+			// dont match
+			toNotify.splice(idx, 1);
+		}
+
+		// Notify systems
+		toNotify.forEach(system => {
+			system = this.inject(system);
+			const systemComponentTypes = (system as any).componentTypes;
+			const all = systemComponentTypes.indexOf(-1) >= 0;
+			(system.change as any)(
+				entity,
+				// Send only the list of components this system expects
+				all
+					? added
+					: (
+						added && systemComponentTypes.indexOf(added.type) >= 0
+							? added
+							: undefined
+					),
+				all
+					? removed
+					: (
+						removed && systemComponentTypes.indexOf(removed.type) >= 0
+							? removed
+							: undefined
+					)
+			);
+		});
 	}
 
 	public query(componentTypes: number[]): ECSIterator<Entity> {
@@ -173,24 +230,138 @@ export default class ECS {
 		}
 	}
 
+    public getEntity(id: number): Entity | undefined {
+        return this.entities.find(entity => entity.id === id);
+    }
+
+	public removeEntity(idOrInstance: number | Entity) {
+		let entity: Entity = idOrInstance as Entity;
+		if (typeof idOrInstance === 'number') {
+			entity = this.getEntity(idOrInstance) as Entity;
+		}
+
+		if (!entity) {
+			return;
+		}
+
+		const idx = this.entities.indexOf(entity);
+		if (idx >= 0) {
+			this.entities.splice(idx, 1);
+		}
+
+		// Remove subscription, if any
+		if (this.entitySubscription[entity.id]) {
+			this.entitySubscription[entity.id]();
+		}
+
+		// Invoke system exit
+		let systems = this.entitySystems[entity.id];
+		if (systems) {
+			systems.forEach(system => {
+				if (system.exit) {
+					this.inject(system);
+					system.exit(entity as Entity);
+				}
+			});
+		}
+
+		// Remove associative indexes
+		delete this.entitySystems[entity.id];
+		delete this.entitySystemLastUpdate[entity.id];
+		delete this.entitySystemLastUpdateGame[entity.id];
+	}
+
+
 	public update() {
 		console.log("ECS::Update: call")
 		let now = NOW()
-		this.gameTime += (now - this.lastUpdate) + this.timeScale;
+
+
+		// adds scaledDelta
+		this.gameTime += (now - this.lastUpdate) * this.timeScale;
+		this.lastUpdate = now;
 
 		let toCallAfterUpdateAll: {
 			[key: string]: {
 				system: System;
-				entitites: Entity[];
+				entities: Entity[];
 			}
 		} = {};
 
-		this.entities.forEach((entity: Entity) => {
-			if (!entity.active) {
 
+		this.entities.forEach(entity => {
+			if (!entity.active) {
+				// Entidade inativa
+				return this.removeEntity(entity);
 			}
 
-		})
+			let systems = this.entitySystems[entity.id];
+			if (!systems) {
+				return;
+			}
+
+			const entityLastUpdates = this.entitySystemLastUpdate[entity.id];
+			const entityLastUpdatesGame = this.entitySystemLastUpdateGame[entity.id];
+			let elapsed, elapsedScaled, interval;
+
+			systems.forEach(system => {
+				if (system.update) {
+					this.inject(system);
+
+					elapsed = now - entityLastUpdates[system.id];
+					elapsedScaled = this.gameTime - entityLastUpdatesGame[system.id];
+
+
+					// Limit FPS
+					if (system.frequence > 0) {
+						interval = 1000 / system.frequence;
+						if (elapsed < interval) {
+							return;
+						}
+
+						// adjust for fpsInterval not being a multiple of RAF's interval (16.7ms)
+						entityLastUpdates[system.id] = now - (elapsed % interval);
+						entityLastUpdatesGame[system.id] = this.gameTime;
+					} else {
+						entityLastUpdates[system.id] = now;
+						entityLastUpdatesGame[system.id] = this.gameTime;
+					}
+
+					let id = `_` + system.id;
+					if (!toCallAfterUpdateAll[id]) {
+						// Call afterUpdateAll
+						if (system.beforeUpdateAll) {
+							system.beforeUpdateAll(this.gameTime);
+						}
+
+						// Save for afterUpdateAll
+						toCallAfterUpdateAll[id] = {
+							system: system,
+							entities: []
+						};
+					}
+					toCallAfterUpdateAll[id].entities.push(entity);
+
+					// Call update
+					system.update(this.gameTime, elapsedScaled, entity);
+				}
+			});
+		});
+
+
+		// Call afterUpdateAll
+		for (var attr in toCallAfterUpdateAll) {
+			if (!toCallAfterUpdateAll.hasOwnProperty(attr)) {
+				continue;
+			}
+
+			let system = toCallAfterUpdateAll[attr].system;
+			if (system.afterUpdateAll) {
+				this.inject(system);
+				system.afterUpdateAll(this.gameTime, toCallAfterUpdateAll[attr].entities);
+			}
+		}
+		toCallAfterUpdateAll = {};
 	}
 
 }

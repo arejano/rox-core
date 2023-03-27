@@ -13,6 +13,7 @@ export default class PlaygroundHandler extends Handler {
 
 		//Render
 		const render = new RenderManager(config.renderer);
+		render.name = "PlaygroundRender"
 
 		//Camera 
 		const camera = new CameraManager(config.camera, render.getSize())
@@ -20,6 +21,7 @@ export default class PlaygroundHandler extends Handler {
 		const scene = new SceneManager();
 
 		this.add('camera', camera.camera)
+		this.add('render', render)
 		this.add('renderer', render.renderer)
 		this.add('scene',scene.scene)
 	}

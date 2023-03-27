@@ -19,33 +19,47 @@ import CubeEntity from "../entities/CubeEntity";
 export default class Playground extends Engine {
 	handler = new PlaygroundHandler();
 	renderer: any;
-	render: any;
+	renderManager: any;
 	camera: any;
 	scene: any;
 	controls: any;
+	world: any;
 
-	constructor() { super() }
+	delta:number = 0;
+	clock = new THREE.Clock();
+
+	constructor() {
+		super();
+		console.log(this.clock)
+	}
 
 	start() {
 		this.running = true;
+		this.renderManager = this.handler.data['render'];
 		this.renderer = this.handler.data['renderer']
 		this.camera = this.handler.data['camera'];
 		this.scene = this.handler.data['scene']
 
-		let world = new ECS([
+		console.log(this.renderManager)
+
+		this.world = new ECS([
 			new SceneObjectSystem(this.scene),
 			new LogSystem(),
 			new PlayerFactorySystem()
 		])
 
-		world.addEntity(new CubeEntity({
+		this.world.addEntity(new CubeEntity({
 			width: 10,
 			height: 10,
 			depth: 10
 		}, "#000FFF"));
 
-		console.log(world)
-		world.update();
+
+		this.world.addEntity(new CubeEntity({
+			width: 10,
+			height: 10,
+			depth: 10
+		}, "#000FFF"));
 
 		this.controls = new OrbitControls(this.camera, this.renderer.domElement)
 
@@ -73,7 +87,7 @@ export default class Playground extends Engine {
 
 		//SkyBox
 		{
-			this.scene.add(new SkyBoxFactory().mesh)
+			// this.scene.add(new SkyBoxFactory().mesh)
 		}
 
 		//Plane
@@ -82,17 +96,28 @@ export default class Playground extends Engine {
 		}
 
 		setTimeout(() => {
-			// this.running = false;
-		}, 1000)
+			this.running = false;
+		}, 3600)
 		this.tick()
 	}
 
 	tick() {
 		if (this.running) {
 			requestAnimationFrame(this.tick)
-			this.controls.update();
-
-			this.renderer.render(this.scene, this.camera)
+			this.delta += this.clock.getDelta();
+			if (this.delta > (1 / 60)) {
+				this.controls.update();
+				this.world.update();
+				this.renderManager.render(this.getTimePerFrame(), this.scene, this.camera);
+			}
 		}
+	}
+
+	private getTimePerFrame() {
+		const now = new Date().getTime()
+		const tpf = (now - (this.time || now)) / 1000
+		this.time = now;
+		this.uptime += tpf;
+		return tpf
 	}
 }

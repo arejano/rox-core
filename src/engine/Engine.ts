@@ -13,8 +13,13 @@ export default class Engine {
 
 	tick() {
 		if (!this.running) {
-			return
+			return;
 		}
+
+
+		// requestAnimationFrame(this.tick)
 	}
 
 }
+
+
