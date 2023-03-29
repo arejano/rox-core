@@ -96,7 +96,7 @@ export default class Playground extends Engine {
 		}
 
 		setTimeout(() => {
-			this.running = false;
+			// this.running = false;
 		}, 3600)
 		this.tick()
 	}
